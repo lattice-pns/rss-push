@@ -1,4 +1,5 @@
 {
+  "minLineChanges": 3,
   "feeds": [
     {
       "url": "https://feeds.example.com/rss.xml",

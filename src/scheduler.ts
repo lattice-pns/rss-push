@@ -8,10 +8,14 @@ interface FeedConfig {
   url: string;
   schedule: string;
   token: string;
+  /** Overrides top-level minLineChanges for this feed. */
+  minLineChanges?: number;
 }
 
 interface Config {
   feeds: FeedConfig[];
+  /** Minimum number of lines in the diff string to POST a push (default 5). */
+  minLineChanges?: number;
 }
 
 function diff(oldText: string, newText: string): string {
@@ -24,7 +28,8 @@ function diff(oldText: string, newText: string): string {
 
 export async function pollFeed(
   feed: FeedConfig,
-  state: StateFile
+  state: StateFile,
+  defaultMinLineChanges: number
 ): Promise<void> {
   console.log(`[poll] Checking ${feed.url}`);
   let raw: string;
@@ -44,6 +49,17 @@ export async function pollFeed(
     return;
   }
 
+  const minLines = feed.minLineChanges ?? defaultMinLineChanges;
+  const linesChanged = changes.split("\n").length;
+  if (linesChanged < minLines) {
+    console.log(
+      `[poll] Insignificant change (${linesChanged} lines < ${minLines}) for ${feed.url}, skipping push`
+    );
+    state[feed.url] = { raw, lastChecked: new Date().toISOString() };
+    await saveState(state);
+    return;
+  }
+
   await pushDiff(feed.token, feed.url, changes);
 
   state[feed.url] = { raw, lastChecked: new Date().toISOString() };
@@ -51,12 +67,13 @@ export async function pollFeed(
 }
 
 export function startScheduler(config: Config, state: StateFile): void {
+  const defaultMinLineChanges = config.minLineChanges ?? 5;
   for (const feed of config.feeds) {
     console.log(
       `[scheduler] Registering ${feed.url} on schedule "${feed.schedule}"`
     );
     new Cron(feed.schedule, { timezone: "UTC" }, () => {
-      pollFeed(feed, state).catch((err) =>
+      pollFeed(feed, state, defaultMinLineChanges).catch((err) =>
         console.error(`[scheduler] Unhandled error for ${feed.url}:`, err)
       );
     });
